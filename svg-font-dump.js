@@ -247,7 +247,7 @@ glyphs.forEach(function(glyph) {
     }
   }
 
-  fs.writeFile(path.join(args.glyphs_dir, filename), glyph.svg);
+  fs.writeFile(path.join(args.glyphs_dir, filename), glyph.svg, function(err) { if (err) { throw err; } });
 
   diff.push(glyph_out);
 
