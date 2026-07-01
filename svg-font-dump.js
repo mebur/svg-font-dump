@@ -15,7 +15,7 @@ var svg_template = _.template(
     '<svg height="<%= height %>" width="<%= width %>" xmlns="http://www.w3.org/2000/svg">' +
     '<path d="<%= d %>" />' +
     '</svg>'
-  );
+);
 
 
 var parser = new ArgumentParser({
@@ -44,7 +44,7 @@ function fixedFromCharCode(code) {
     code -= 0x10000;
 
     var surrogate1 = 0xd800 + (code >> 10)
-      , surrogate2 = 0xdc00 + (code & 0x3ff);
+        , surrogate2 = 0xdc00 + (code & 0x3ff);
 
     return String.fromCharCode(surrogate1, surrogate2);
   } else {
@@ -56,7 +56,7 @@ function fixedFromCharCode(code) {
 function fixedCharCodeAt(chr) {
   /*jshint bitwise: false*/
   var char1 = chr.charCodeAt(0)
-    , char2 = chr.charCodeAt(1);
+      , char2 = chr.charCodeAt(1);
 
   if ((chr.length >= 2) &&
       ((char1 & 0xfc00) === 0xd800) &&
@@ -100,18 +100,54 @@ function load_svg_data(data) {
 
     result.push({
       d: new SvgPath(d)
-              .translate(0, -fontAscent)
-              .scale(scale, -scale)
-              .abs()
-              .round(1)
-              .rel()
-              .round(1)
-              .toString(),
+          .translate(0, -fontAscent)
+          .scale(scale, -scale)
+          .abs()
+          .round(1)
+          .rel()
+          .round(1)
+          .toString(),
 
       unicode: unicode,
       name: name,
       width: (width*scale).toFixed(1),
       height: 1000
+    });
+  });
+
+  return result;
+}
+
+
+// Load glyphs data from Font Awesome icons.json format
+// Format: { "icon-name": { unicode, styles, search, svg: { "style": { path, width, height } } } }
+//
+function load_icons_json_data(data) {
+
+  var result = [];
+
+  _.each(data, function (icon, name) {
+    _.each(icon.styles, function (style) {
+      var svgData = icon.svg && icon.svg[style];
+
+      if (!svgData || !svgData.path) { return; }
+
+      var unicode = parseInt(icon.unicode, 16);
+
+      result.push({
+        d: new SvgPath(svgData.path)
+            .abs()
+            .round(1)
+            .rel()
+            .round(1)
+            .toString(),
+        width: svgData.width.toFixed(1),
+        height: svgData.height,
+
+        unicode: fixedFromCharCode(unicode),
+        name: icon.styles.length > 1 ? name + '-' + style : name,
+        search: (icon.search && icon.search.terms) || []
+      });
     });
   });
 
@@ -135,11 +171,11 @@ function load_fontello_data(data) {
     result.push({
       //d: glyph.svg.path,
       d: new SvgPath(glyph.svg.path)
-              .abs()
-              .round(1)
-              .rel()
-              .round(1)
-              .toString(),
+          .abs()
+          .round(1)
+          .rel()
+          .round(1)
+          .toString(),
       width: glyph.svg.width.toFixed(1),
       height: 1000,
 
@@ -180,7 +216,12 @@ if (args.config) {
 var glyphs;
 
 if (path.extname(args.src_font) === '.json') {
-  glyphs = load_fontello_data(JSON.parse(data));
+  var parsed = JSON.parse(data);
+  if (parsed.glyphs) {
+    glyphs = load_fontello_data(parsed);
+  } else {
+    glyphs = load_icons_json_data(parsed);
+  }
 } else {
   glyphs = load_svg_data(data);
 }
@@ -196,10 +237,17 @@ glyphs.forEach(function(glyph) {
 
   // if got config from existing font, then write only missed files
   if (config) {
+    // First try to match by both unicode AND name (handles multiple styles sharing same unicode, e.g. regular+solid)
     exists = _.find(config.glyphs, function(element) {
-      //console.log('---' + element.from + '---' + glyph.unicode)
-      return (element.from || element.code) === glyph.unicode;
+      return (element.from || element.code) === glyph.unicode &&
+          (element.css === glyph.name || element.file === glyph.name);
     });
+    // Fall back to unicode-only match (for single-style icons)
+    if (!exists) {
+      exists = _.find(config.glyphs, function(element) {
+        return (element.from || element.code) === glyph.unicode;
+      });
+    }
 
     if (exists && !args.force) {
       console.log((glyph.unicode.toString(16)) + ' exists, skipping');
@@ -247,7 +295,7 @@ glyphs.forEach(function(glyph) {
     }
   }
 
-  fs.writeFile(path.join(args.glyphs_dir, filename), glyph.svg, function(err) { if (err) { throw err; } });
+  fs.writeFileSync(path.join(args.glyphs_dir, filename), glyph.svg);
 
   diff.push(glyph_out);
 
@@ -262,7 +310,7 @@ if (args.diff_config) {
   }
 
   fs.writeFileSync(
-    args.diff_config,
-    yaml.dump({ glyphs: diff }, { flowLevel: 3, styles: { '!!int': 'hexadecimal' } })
+      args.diff_config,
+      yaml.dump({ glyphs: diff }, { flowLevel: 3, styles: { '!!int': 'hexadecimal' } })
   );
 }
